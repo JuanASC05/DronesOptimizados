@@ -6,4 +6,6 @@ folium
 streamlit-folium
 matplotlib
 openpyxl
+scipy
+
 
