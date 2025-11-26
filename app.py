@@ -192,8 +192,10 @@ except FileNotFoundError:
     st.error(f"No se encontró el archivo {DATA_PATH}. Asegúrate de que esté en la misma carpeta que app.py.")
     st.stop()
 
-# Asumimos nombres estándar; ajusta si difieren
+
+
 df = df[["RUC", "RAZON_SOCIAL", "LATITUD", "LONGITUD"]].copy()
+df["RUC"] = df["RUC"].astype(str).str.strip()   # 🔴 NUEVO: RUC siempre como texto
 df = df.dropna(subset=["LATITUD","LONGITUD"])
 df = df.drop_duplicates(subset=["RUC"])
 df["LATITUD"] = df["LATITUD"].astype(float)
@@ -202,22 +204,16 @@ df["LONGITUD"] = df["LONGITUD"].astype(float)
 st.success(f"Datos cargados correctamente desde {DATA_PATH}. Registros válidos: {len(df)}")
 
 
-# Asumimos nombres estándar; ajusta si difieren
-df = df[["RUC", "RAZON_SOCIAL", "LATITUD", "LONGITUD"]].copy()
-df = df.dropna(subset=["LATITUD","LONGITUD"])
-df = df.drop_duplicates(subset=["RUC"])
-df["LATITUD"] = df["LATITUD"].astype(float)
-df["LONGITUD"] = df["LONGITUD"].astype(float)
 
-st.success(f"Datos cargados correctamente. Registros válidos: {len(df)}")
 
-# Submuestreo visual
+
+
+
 if submuestro and len(df) > n_max:
     df_vis = df.sample(n_max, random_state=42).reset_index(drop=True)
 else:
     df_vis = df.copy()
 
-# === NUEVO: nombre legible de empresa y diccionario empresa -> RUC ===
 df_vis["NOMBRE_EMPRESA"] = df_vis["RAZON_SOCIAL"].astype(str)
 emp_a_ruc = dict(zip(df_vis["NOMBRE_EMPRESA"], df_vis["RUC"]))
 
@@ -294,8 +290,9 @@ with tab_rutas:
                     )
 
                     # --- Info completa de origen y destino ---
-                    info_origen = df_vis[df_vis["RUC"] == origen_ruc].iloc[0]
-                    info_destino = df_vis[df_vis["RUC"] == destino_ruc].iloc[0]
+                    info_origen = df_vis[df_vis["RUC"].astype(str) == str(origen_ruc)].iloc[0]
+                    info_destino = df_vis[df_vis["RUC"].astype(str) == str(destino_ruc)].iloc[0]
+
 
                     col_o, col_d = st.columns(2)
                     with col_o:
@@ -375,6 +372,7 @@ st.sidebar.header("⚙️ Configuración del aplicativo")
 
 tipo_grafo = st.sidebar.selectbox("Tipo de grafo", ["k-NN", "MST"])
 k_vecinos = st.sidebar.slider("k vecinos (solo k-NN)", 1, 6, 3)
+
 
 
 
