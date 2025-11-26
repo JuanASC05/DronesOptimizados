@@ -78,44 +78,84 @@ def dibujar_grafo_spring(G):
     ax.axis("off")
     return fig
 
-def dibujar_mapa_folium(G, camino=None):
-    """Mapa Folium con nodos y aristas. Si 'camino' se pasa, lo resalta."""
+def dibujar_mapa_folium(G, camino=None, solo_ruta=False):
+    """
+    Mapa Folium con nodos y aristas.
+    - si solo_ruta=False: muestra toda la red y resalta la ruta (si existe).
+    - si solo_ruta=True: solo muestra los nodos y aristas de la ruta.
+    """
     if G.number_of_nodes() == 0:
         return None
 
-    lats = [G.nodes[n]["lat"] for n in G.nodes]
-    lons = [G.nodes[n]["lon"] for n in G.nodes]
+    # --- Qué nodos usar para centrar el mapa ---
+    if solo_ruta and camino and len(camino) >= 1:
+        nodos_centro = camino
+    else:
+        nodos_centro = list(G.nodes)
+
+    lats = [G.nodes[n]["lat"] for n in nodos_centro]
+    lons = [G.nodes[n]["lon"] for n in nodos_centro]
     centro = [np.mean(lats), np.mean(lons)]
 
-    m = folium.Map(location=centro, zoom_start=11, control_scale=True)
+    m = folium.Map(location=centro, zoom_start=12, control_scale=True)
 
-    # Aristas base (toda la red)
-    for u, v, data in G.edges(data=True):
-        lat1, lon1 = G.nodes[u]["lat"], G.nodes[u]["lon"]
-        lat2, lon2 = G.nodes[v]["lat"], G.nodes[v]["lon"]
-        folium.PolyLine([(lat1, lon1), (lat2, lon2)],
-                        weight=2, opacity=0.5, color="gray").add_to(m)
+    # --- Dibujo de aristas ---
+    if solo_ruta:
+        # Solo segmentos consecutivos de la ruta
+        if camino and len(camino) >= 2:
+            puntos = []
+            for u, v in zip(camino[:-1], camino[1:]):
+                lat1, lon1 = G.nodes[u]["lat"], G.nodes[u]["lon"]
+                lat2, lon2 = G.nodes[v]["lat"], G.nodes[v]["lon"]
+                folium.PolyLine(
+                    [(lat1, lon1), (lat2, lon2)],
+                    weight=4, color="red", opacity=0.9
+                ).add_to(m)
+    else:
+        # Toda la red en gris
+        for u, v, data in G.edges(data=True):
+            lat1, lon1 = G.nodes[u]["lat"], G.nodes[u]["lon"]
+            lat2, lon2 = G.nodes[v]["lat"], G.nodes[v]["lon"]
+            folium.PolyLine(
+                [(lat1, lon1), (lat2, lon2)],
+                weight=2, opacity=0.5, color="gray"
+            ).add_to(m)
 
-    # Nodos
-    for n, attr in G.nodes(data=True):
+    # --- Dibujo de nodos ---
+    if solo_ruta and camino:
+        nodos_a_mostrar = camino
+    else:
+        nodos_a_mostrar = list(G.nodes)
+
+    for idx, n in enumerate(nodos_a_mostrar):
+        attr = G.nodes[n]
         popup = f"<b>{attr.get('nombre','')}</b><br>RUC: {n}"
+        # Origen y destino con color distinto
+        if solo_ruta and camino:
+            if n == camino[0]:
+                fill = "green"
+            elif n == camino[-1]:
+                fill = "blue"
+            else:
+                fill = "#8FEAF3"
+        else:
+            fill = "#8FEAF3"
+
         folium.CircleMarker(
             location=[attr["lat"], attr["lon"]],
-            radius=4, fill=True, fill_opacity=0.9, color="black", weight=0.5,
-            fill_color="#8FEAF3"
+            radius=5, fill=True, fill_opacity=0.95,
+            color="black", weight=0.7, fill_color=fill
         ).add_to(m).add_child(folium.Popup(popup, max_width=250))
 
-    # === NUEVO: resaltar ruta óptima si existe ===
-    if camino and len(camino) >= 2:
-        puntos = []
-        for ruc in camino:
-            lat, lon = G.nodes[ruc]["lat"], G.nodes[ruc]["lon"]
-            puntos.append((lat, lon))
+    # Si no es solo_ruta pero hay camino, añadimos polyline roja encima
+    if (not solo_ruta) and camino and len(camino) >= 2:
+        puntos = [(G.nodes[r]["lat"], G.nodes[r]["lon"]) for r in camino]
         folium.PolyLine(
             puntos, weight=5, color="red", opacity=0.9
         ).add_to(m)
 
     return m
+
 
 
 def calcular_ruta_dijkstra(G, origen, destino):
@@ -314,8 +354,9 @@ with tab_rutas:
                     st.write(" → ".join(camino))
 
                     # --- Mapa con la ruta óptima resaltada ---
-                    mapa_ruta = dibujar_mapa_folium(G, camino=camino)
+                    mapa_ruta = dibujar_mapa_folium(G, camino=camino, solo_ruta=True)
                     st_folium(mapa_ruta, width=900, height=600)
+
                 else:
                     st.error("No existe ruta entre esas empresas en el grafo.")
 
@@ -372,6 +413,7 @@ st.sidebar.header("⚙️ Configuración del aplicativo")
 
 tipo_grafo = st.sidebar.selectbox("Tipo de grafo", ["k-NN", "MST"])
 k_vecinos = st.sidebar.slider("k vecinos (solo k-NN)", 1, 6, 3)
+
 
 
 
