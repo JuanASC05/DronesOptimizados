@@ -78,8 +78,8 @@ def dibujar_grafo_spring(G):
     ax.axis("off")
     return fig
 
-def dibujar_mapa_folium(G):
-    """Mapa Folium con nodos y aristas."""
+def dibujar_mapa_folium(G, camino=None):
+    """Mapa Folium con nodos y aristas. Si 'camino' se pasa, lo resalta."""
     if G.number_of_nodes() == 0:
         return None
 
@@ -89,11 +89,12 @@ def dibujar_mapa_folium(G):
 
     m = folium.Map(location=centro, zoom_start=11, control_scale=True)
 
-    # Aristas
+    # Aristas base (toda la red)
     for u, v, data in G.edges(data=True):
         lat1, lon1 = G.nodes[u]["lat"], G.nodes[u]["lon"]
         lat2, lon2 = G.nodes[v]["lat"], G.nodes[v]["lon"]
-        folium.PolyLine([(lat1, lon1), (lat2, lon2)], weight=2, opacity=0.7).add_to(m)
+        folium.PolyLine([(lat1, lon1), (lat2, lon2)],
+                        weight=2, opacity=0.5, color="gray").add_to(m)
 
     # Nodos
     for n, attr in G.nodes(data=True):
@@ -104,7 +105,18 @@ def dibujar_mapa_folium(G):
             fill_color="#8FEAF3"
         ).add_to(m).add_child(folium.Popup(popup, max_width=250))
 
+    # === NUEVO: resaltar ruta óptima si existe ===
+    if camino and len(camino) >= 2:
+        puntos = []
+        for ruc in camino:
+            lat, lon = G.nodes[ruc]["lat"], G.nodes[ruc]["lon"]
+            puntos.append((lat, lon))
+        folium.PolyLine(
+            puntos, weight=5, color="red", opacity=0.9
+        ).add_to(m)
+
     return m
+
 
 def calcular_ruta_dijkstra(G, origen, destino):
     try:
@@ -205,12 +217,18 @@ if submuestro and len(df) > n_max:
 else:
     df_vis = df.copy()
 
+# === NUEVO: nombre legible de empresa y diccionario empresa -> RUC ===
+df_vis["NOMBRE_EMPRESA"] = df_vis["RAZON_SOCIAL"].astype(str)
+emp_a_ruc = dict(zip(df_vis["NOMBRE_EMPRESA"], df_vis["RUC"]))
+
 # Construir grafo según selección
 if tipo_grafo == "k-NN":
     G = construir_grafo_knn(df_vis, k=k_vecinos)
 else:
     st.warning("MST puede demorar si hay muchos nodos; úsalo con <= 200 nodos.")
     G = construir_grafo_mst(df_vis)
+
+
 
 # ==========================
 # Tabs de interfaz
@@ -247,23 +265,63 @@ with tab_rutas:
     if not activar_ruta:
         st.info("Activa 'Ruta óptima (Dijkstra)' en la barra lateral.")
     else:
-        nodos = list(G.nodes)
-        if len(nodos) < 2:
+        if G.number_of_nodes() < 2:
             st.warning("No hay suficientes nodos para calcular rutas.")
         else:
+            # Opciones por nombre de empresa
+            opciones_empresas = sorted(df_vis["NOMBRE_EMPRESA"].unique())
+
             col1, col2 = st.columns(2)
             with col1:
-                origen = st.selectbox("Nodo origen (RUC)", nodos)
+                origen_nombre = st.selectbox(
+                    "Empresa origen", opciones_empresas, key="ruta_origen"
+                )
             with col2:
-                destino = st.selectbox("Nodo destino (RUC)", [n for n in nodos if n != origen])
+                opciones_destino = [e for e in opciones_empresas if e != origen_nombre]
+                destino_nombre = st.selectbox(
+                    "Empresa destino", opciones_destino, key="ruta_destino"
+                )
+
+            # Convertir nombre -> RUC (que es el ID del nodo en el grafo)
+            origen_ruc = str(emp_a_ruc[origen_nombre])
+            destino_ruc = str(emp_a_ruc[destino_nombre])
 
             if st.button("Calcular ruta"):
-                camino, dist_km = calcular_ruta_dijkstra(G, origen, destino)
+                camino, dist_km = calcular_ruta_dijkstra(G, origen_ruc, destino_ruc)
                 if camino:
-                    st.success(f"Camino encontrado ({len(camino)} nodos), distancia aprox: {dist_km:.2f} km")
-                    st.write("Ruta:", " → ".join(camino))
+                    st.success(
+                        f"Camino encontrado ({len(camino)} nodos), distancia aprox: {dist_km:.2f} km"
+                    )
+
+                    # --- Info completa de origen y destino ---
+                    info_origen = df_vis[df_vis["RUC"] == origen_ruc].iloc[0]
+                    info_destino = df_vis[df_vis["RUC"] == destino_ruc].iloc[0]
+
+                    col_o, col_d = st.columns(2)
+                    with col_o:
+                        st.markdown("### 🟢 Origen")
+                        st.write(f"**Empresa:** {info_origen['RAZON_SOCIAL']}")
+                        st.write(f"**RUC:** {info_origen['RUC']}")
+                        st.write(
+                            f"**Coordenadas:** ({info_origen['LATITUD']:.5f}, {info_origen['LONGITUD']:.5f})"
+                        )
+                    with col_d:
+                        st.markdown("### 🔵 Destino")
+                        st.write(f"**Empresa:** {info_destino['RAZON_SOCIAL']}")
+                        st.write(f"**RUC:** {info_destino['RUC']}")
+                        st.write(
+                            f"**Coordenadas:** ({info_destino['LATITUD']:.5f}, {info_destino['LONGITUD']:.5f})"
+                        )
+
+                    st.markdown("#### Ruta (secuencia de nodos)")
+                    st.write(" → ".join(camino))
+
+                    # --- Mapa con la ruta óptima resaltada ---
+                    mapa_ruta = dibujar_mapa_folium(G, camino=camino)
+                    st_folium(mapa_ruta, width=900, height=600)
                 else:
-                    st.error("No existe ruta entre esos nodos en el grafo.")
+                    st.error("No existe ruta entre esas empresas en el grafo.")
+
 
 # -------- Tab Hubs --------
 with tab_hubs:
@@ -317,6 +375,7 @@ st.sidebar.header("⚙️ Configuración del aplicativo")
 
 tipo_grafo = st.sidebar.selectbox("Tipo de grafo", ["k-NN", "MST"])
 k_vecinos = st.sidebar.slider("k vecinos (solo k-NN)", 1, 6, 3)
+
 
 
 
